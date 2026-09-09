@@ -7,23 +7,36 @@ TOKEN = os.environ.get("BOT_TOKEN")
 LAST_UNIT = 0
 THIS_UNIT = 1
 
-def calculate_bill(units: int) -> int:
-    bill = 0
-    if units <= 0:
-        return 0
-    if units <= 50:
-        bill = units * 50
-    elif units <= 100:
-        bill = (50 * 50) + ((units - 50) * 100)
-    elif units <= 200:
-        bill = (50 * 50) + (50 * 100) + ((units - 100) * 150)
-    else:
-        bill = (50 * 50) + (50 * 100) + (100 * 150) + ((units - 200) * 300)
-    return bill
+SERVICE_FEE = 500
+
+def calculate_bill(units: int):
+    tiers = []
+    remaining = units
+
+    tier1 = min(remaining, 50)
+    if tier1 > 0:
+        tiers.append((1, min(units, 50), 50, tier1 * 50))
+        remaining -= tier1
+
+    tier2 = min(remaining, 50)
+    if tier2 > 0:
+        tiers.append((51, min(units, 100), 100, tier2 * 100))
+        remaining -= tier2
+
+    tier3 = min(remaining, 100)
+    if tier3 > 0:
+        tiers.append((101, min(units, 200), 150, tier3 * 150))
+        remaining -= tier3
+
+    if remaining > 0:
+        tiers.append((201, units, 300, remaining * 300))
+
+    subtotal = sum(t[3] for t in tiers)
+    total = subtotal + SERVICE_FEE
+    return tiers, subtotal, total
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "⚡ Myanmar Electric Bill Calculator ⚡\n\n"
         "Please input last month meter reading unit.\n"
         "ယခင်လမီတာဖတ်တဲ့ ယူနစ်ကို ဖြည့်ပေးပါ။"
     )
@@ -63,34 +76,28 @@ async def get_this_unit(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     units_used = this_unit - last_unit
-    total_bill = calculate_bill(units_used)
+    tiers, subtotal, total = calculate_bill(units_used)
 
-    # Build breakdown
     breakdown = ""
-    remaining = units_used
-    if remaining > 0:
-        tier1 = min(remaining, 50)
-        breakdown += f"  {1}–{min(units_used,50)} units × 50 ks = {tier1 * 50:,} ks\n"
-        remaining -= tier1
-    if remaining > 0:
-        tier2 = min(remaining, 50)
-        breakdown += f"  51–{min(units_used,100)} units × 100 ks = {tier2 * 100:,} ks\n"
-        remaining -= tier2
-    if remaining > 0:
-        tier3 = min(remaining, 100)
-        breakdown += f"  101–{min(units_used,200)} units × 150 ks = {tier3 * 150:,} ks\n"
-        remaining -= tier3
-    if remaining > 0:
-        breakdown += f"  201+ units × 300 ks = {remaining * 300:,} ks\n"
+    for (start_u, end_u, rate, cost) in tiers:
+        count = end_u - start_u + 1
+        breakdown += (
+            f"  • {start_u}–{end_u} units → {count} units × {rate:,} ks = {cost:,} ks\n"
+            f"    ({start_u} မှ {end_u} ယူနစ်အတွက် တစ်ယူနစ် {rate:,} ကျပ်နှုန်းဖြင့် တွက်ထားပါသည်။)\n"
+        )
 
     await update.message.reply_text(
-        f"⚡ Result / ရလဒ် ⚡\n\n"
         f"Last month / ယခင်လ: {last_unit} units\n"
         f"This month / ယခုလ: {this_unit} units\n"
-        f"Units used / သုံးဆောင်မှု: {units_used} units\n\n"
-        f"📊 Breakdown:\n"
+        f"Units used / သုံးစွဲထားသော ပမာဏ: {units_used} units\n\n"
+        f"📊 Breakdown / တွက်ချက်ပုံ:\n"
+        f"(Myanmar electricity uses a tiered rate — the more you use, the higher the rate per unit.)\n"
+        f"(မြန်မာနိုင်ငံ၏ လျှပ်စစ်ဓာတ်အားခွဲတမ်းနှုန်းထားများသည် သုံးစွဲမှုပမာဏပေါ်မူတည်၍ တိုးလာပါသည်။)\n\n"
         f"{breakdown}\n"
-        f"💰 Total Bill / စုစုပေါင်း: {total_bill:,} kyats\n\n"
+        f"Subtotal / ကြေးငွေပေါင်း: {subtotal:,} ks\n"
+        f"Service fee / ဝန်ဆောင်ကြေး: {SERVICE_FEE:,} ks\n"
+        f"──────────────────\n"
+        f"💰 Total Bill / စုစုပေါင်း ပေးချေရမည့်ငွေ: {total:,} kyats\n\n"
         f"To calculate again / ထပ်တွက်ရန်: /start"
     )
     return ConversationHandler.END
